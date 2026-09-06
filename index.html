@@ -1,0 +1,389 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#5b4bdb" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="درسّي" />
+  <meta name="description" content="لوحة تحكم عربية لإدارة جلسات الدروس الخصوصية والمدفوعات والديون." />
+  <title>درسّي | إدارة الجلسات والمدفوعات</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="icons/icon-192.png" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="التنقل الرئيسي">
+      <div class="brand">
+        <div class="brand-mark">د</div>
+        <div>
+          <strong>درسّي</strong>
+          <span>إدارة الدروس الخصوصية</span>
+        </div>
+      </div>
+
+      <nav class="nav-list">
+        <button class="nav-item active" data-view="dashboard" type="button"><span>⌂</span><b>لوحة التحكم</b></button>
+        <button class="nav-item" data-view="entry" type="button"><span>＋</span><b>إضافة جلسة</b></button>
+        <button class="nav-item" data-view="debts" type="button"><span>◔</span><b>الديون</b><i id="debtBadge" class="nav-badge">0</i></button>
+        <button class="nav-item" data-view="students" type="button"><span>♙</span><b>الطلاب</b></button>
+        <button class="nav-item" data-view="records" type="button"><span>≡</span><b>السجل</b></button>
+      </nav>
+
+      <div class="sidebar-card">
+        <div class="mini-icon">✓</div>
+        <div>
+          <strong>حفظ تلقائي</strong>
+          <p>تُحفظ بياناتك محلياً على هذا الجهاز فوراً.</p>
+        </div>
+      </div>
+    </aside>
+
+    <main class="main-content">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow" id="todayLabel"></p>
+          <h1 id="viewTitle">لوحة التحكم</h1>
+        </div>
+        <div class="top-actions">
+          <button class="icon-button install-button hidden-field" id="installAppBtn" title="تثبيت التطبيق على الهاتف" type="button">⌑</button>
+          <button class="icon-button" id="exportBtn" title="تصدير نسخة احتياطية" type="button">⇩</button>
+          <label class="icon-button file-button" title="استيراد نسخة احتياطية">⇧<input id="importInput" type="file" accept="application/json" hidden></label>
+          <div class="avatar">م</div>
+        </div>
+      </header>
+
+      <section class="view active" id="dashboardView">
+        <div class="hero-panel">
+          <div>
+            <span class="hero-kicker">ملخص مالي سريع</span>
+            <h2>كل جلساتك ومدفوعاتك في مكان واحد</h2>
+            <p>تابع الدخل المتوقع والمحصل والديون المتبقية مع ملخص تفصيلي لكل طالب.</p>
+          </div>
+          <div class="hero-filter">
+            <label for="dashboardPeriod">الفترة</label>
+            <select id="dashboardPeriod">
+              <option value="all">كل الوقت</option>
+              <option value="today">اليوم</option>
+              <option value="month" selected>هذا الشهر</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="stats-grid">
+          <article class="stat-card expected">
+            <div class="stat-head"><span class="stat-icon">◈</span><span>الإجمالي المتوقع</span></div>
+            <strong id="totalExpected">0 ل.س</strong>
+            <small id="expectedHint">0 جلسة</small>
+          </article>
+          <article class="stat-card paid">
+            <div class="stat-head"><span class="stat-icon">✓</span><span>إجمالي المحصل</span></div>
+            <strong id="totalPaid">0 ل.س</strong>
+            <small id="paidHint">نسبة التحصيل 0٪</small>
+          </article>
+          <article class="stat-card debt">
+            <div class="stat-head"><span class="stat-icon">!</span><span>الديون المتبقية</span></div>
+            <strong id="totalDebt">0 ل.س</strong>
+            <small id="debtHint">0 جلسة عليها متبقي</small>
+          </article>
+          <article class="stat-card hours">
+            <div class="stat-head"><span class="stat-icon">◷</span><span>إجمالي الساعات</span></div>
+            <strong id="totalHours">0 ساعة</strong>
+            <small id="hoursHint">متوسط 0 ساعة/جلسة</small>
+          </article>
+        </div>
+
+        <div class="content-grid">
+          <section class="panel wide">
+            <div class="panel-head">
+              <div><span class="section-kicker">الطلاب</span><h3>ملخص حسب الطالب</h3></div>
+              <div class="panel-actions">
+                <button class="text-button" data-jump="students" type="button">إدارة الطلاب</button>
+                <button class="text-button" data-jump="entry" type="button">+ جلسة جديدة</button>
+              </div>
+            </div>
+            <div class="student-summary-grid" id="studentSummary"></div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head"><div><span class="section-kicker">آخر النشاطات</span><h3>أحدث الجلسات</h3></div></div>
+            <div class="activity-list" id="recentActivity"></div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head"><div><span class="section-kicker">التوزيع</span><h3>الساعات حسب المادة</h3></div></div>
+            <div id="subjectBreakdown" class="subject-breakdown"></div>
+          </section>
+
+          <section class="panel wide">
+            <div class="panel-head"><div><span class="section-kicker">حسب اليوم</span><h3>التجميع الزمني للجلسات</h3></div></div>
+            <div id="dailySummary" class="daily-summary"></div>
+          </section>
+        </div>
+      </section>
+
+      <section class="view" id="entryView">
+        <div class="form-layout">
+          <section class="panel form-panel">
+            <div class="panel-head">
+              <div><span class="section-kicker">جلسة جديدة</span><h3>تسجيل درس خصوصي</h3></div>
+              <span class="live-dot">● مباشر</span>
+            </div>
+
+            <form id="sessionForm" novalidate>
+              <div class="field-grid two">
+                <div class="field">
+                  <label for="studentSelect">اسم الطالب</label>
+                  <select id="studentSelect" required>
+                    <option value="">اختر الطالب</option>
+                  </select>
+                  <small id="rateHint">سعر الساعة يظهر بعد اختيار الطالب</small>
+                </div>
+                <div class="field">
+                  <label for="subjectSelect">المادة الدراسية</label>
+                  <select id="subjectSelect" required>
+                    <option value="">اختر المادة</option>
+                    <option value="math">📐 رياضيات</option>
+                    <option value="physics">⚛️ فيزياء</option>
+                    <option value="chemistry">🧪 كيمياء</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="field-grid two">
+                <div class="field">
+                  <label for="sessionDate">تاريخ الجلسة</label>
+                  <input id="sessionDate" type="date" required />
+                </div>
+                <div class="field">
+                  <label>عدد الساعات</label>
+                  <div class="hour-chips" id="hourChips">
+                    <button type="button" data-hours="1">1 ساعة</button>
+                    <button type="button" data-hours="1.5">1.5 ساعة</button>
+                    <button type="button" data-hours="2">2 ساعة</button>
+                    <button type="button" data-hours="custom">مخصص</button>
+                  </div>
+                  <input id="customHours" class="hidden-field" type="number" min="0.25" max="12" step="0.25" placeholder="مثال: 2.5" inputmode="decimal" />
+                </div>
+              </div>
+
+              <div class="amount-preview">
+                <div><span>المبلغ المستحق</span><strong id="amountPreview">0 ل.س</strong></div>
+                <p id="amountFormula">اختر الطالب وعدد الساعات ليتم الحساب تلقائياً.</p>
+              </div>
+
+              <div class="field">
+                <label>حالة الدفع</label>
+                <div class="status-choice" id="paymentStatusChoice">
+                  <button type="button" data-status="paid"><span class="status-dot green"></span>تم الدفع بالكامل</button>
+                  <button type="button" data-status="unpaid" class="active"><span class="status-dot red"></span>لم يتم الدفع</button>
+                  <button type="button" data-status="partial"><span class="status-dot amber"></span>دفعة جزئية</button>
+                </div>
+              </div>
+
+              <div class="field hidden-field" id="partialPaymentField">
+                <label for="partialPayment">المبلغ المدفوع فعلياً</label>
+                <div class="money-input"><input id="partialPayment" type="number" min="0" step="500" inputmode="numeric" placeholder="0"><span>ل.س</span></div>
+                <small id="partialHint"></small>
+              </div>
+
+              <div class="field">
+                <label for="sessionNote">ملاحظات <span class="muted">(اختياري)</span></label>
+                <textarea id="sessionNote" rows="3" maxlength="300" placeholder="مثال: غياب، ظرف خاص، مراجعة قبل الامتحان..."></textarea>
+              </div>
+
+              <button class="primary-button" id="saveSessionBtn" type="submit"><span>حفظ الجلسة</span><b>←</b></button>
+            </form>
+          </section>
+
+          <aside class="panel sticky-summary">
+            <span class="section-kicker">معاينة</span>
+            <h3>ملخص الجلسة</h3>
+            <div class="preview-card">
+              <div class="preview-avatar" id="previewAvatar">؟</div>
+              <strong id="previewStudent">لم يتم اختيار طالب</strong>
+              <span id="previewSubject">—</span>
+            </div>
+            <dl class="preview-list">
+              <div><dt>التاريخ</dt><dd id="previewDate">—</dd></div>
+              <div><dt>الساعات</dt><dd id="previewHours">—</dd></div>
+              <div><dt id="previewRateLabel">سعر الساعة</dt><dd id="previewRate">—</dd></div>
+              <div><dt>الحالة</dt><dd id="previewStatus"><span class="status-pill unpaid">غير مدفوع</span></dd></div>
+              <div class="total-line"><dt>الإجمالي</dt><dd id="previewTotal">0 ل.س</dd></div>
+            </dl>
+          </aside>
+        </div>
+      </section>
+
+      <section class="view" id="debtsView">
+        <div class="debt-layout">
+          <section class="panel form-panel">
+            <div class="panel-head"><div><span class="section-kicker">تسوية المستحقات</span><h3>تسجيل دفعة على جلسة سابقة</h3></div></div>
+            <form id="debtForm" novalidate>
+              <div class="field">
+                <label for="debtSessionSelect">الجلسة المستحقة</label>
+                <select id="debtSessionSelect" required><option value="">اختر جلسة غير مسددة</option></select>
+                <small>تعرض القائمة الجلسات التي لم تُسدّد بالكامل فقط.</small>
+              </div>
+
+              <div id="debtSelectedDetails" class="debt-selected empty">
+                <p>اختر جلسة لرؤية تفاصيل المبلغ المتبقي.</p>
+              </div>
+
+              <div class="field-grid two">
+                <div class="field">
+                  <label for="debtPaymentAmount">المبلغ المدفوع الآن</label>
+                  <div class="money-input"><input id="debtPaymentAmount" type="number" min="1" step="500" placeholder="0" inputmode="numeric" required><span>ل.س</span></div>
+                </div>
+                <div class="field">
+                  <label for="debtPaymentDate">تاريخ الدفعة</label>
+                  <input id="debtPaymentDate" type="date" required>
+                </div>
+              </div>
+
+              <button class="primary-button" id="saveDebtBtn" type="submit"><span>تسجيل الدفعة وتحديث الدين</span><b>✓</b></button>
+            </form>
+          </section>
+
+          <section class="panel debt-list-panel">
+            <div class="panel-head">
+              <div><span class="section-kicker">ديون حالية</span><h3>الجلسات التي عليها متبقي</h3></div>
+              <strong id="debtsTotalHeader">0 ل.س</strong>
+            </div>
+            <div id="openDebtsList" class="open-debts-list"></div>
+          </section>
+        </div>
+      </section>
+
+      <section class="view" id="studentsView">
+        <div class="students-layout">
+          <section class="panel students-panel">
+            <div class="panel-head students-head">
+              <div>
+                <span class="section-kicker">إدارة مرنة</span>
+                <h3>الطلاب والأسعار</h3>
+                <p class="panel-subtitle">أضف طلاباً جدد وعدّل بياناتهم وسعرهم في أي وقت.</p>
+              </div>
+              <button class="primary-button compact" id="addStudentBtn" type="button"><span>+ إضافة طالب</span><b>＋</b></button>
+            </div>
+
+            <div class="student-tools">
+              <div class="search-box"><span>⌕</span><input id="studentSearch" type="search" placeholder="ابحث بالاسم أو العنوان..." autocomplete="off"></div>
+              <select id="studentStateFilter" aria-label="حالة الطالب"><option value="active">الطلاب الحاليون</option><option value="all">الكل</option><option value="archived">المؤرشفون</option></select>
+            </div>
+
+            <div id="studentManagementList" class="student-management-list"></div>
+            <div id="studentsEmpty" class="empty-state hidden-field"><div>👥</div><h4>لا يوجد طلاب مطابقون</h4><p>أضف طالباً جديداً أو غيّر البحث.</p></div>
+          </section>
+
+          <aside class="panel student-tips">
+            <span class="section-kicker">استخدام أسرع</span>
+            <h3>نصائح صغيرة</h3>
+            <div class="tips-list">
+              <div><span>⚡</span><p><b>سعر مرن</b><small>اختر تسعيراً بالساعة أو مبلغاً ثابتاً للجلسة لكل طالب.</small></p></div>
+              <div><span>🗂️</span><p><b>أرشفة ذكية</b><small>عند توقف الطالب عن الدروس يمكنك أرشفته مع بقاء كل سجله محفوظاً.</small></p></div>
+              <div><span>🔒</span><p><b>حفظ التاريخ</b><small>تغيير سعر الطالب لا يغيّر قيمة الجلسات القديمة المسجلة.</small></p></div>
+            </div>
+          </aside>
+        </div>
+      </section>
+
+      <section class="view" id="recordsView">
+        <section class="panel records-panel">
+          <div class="panel-head records-head">
+            <div><span class="section-kicker">الأرشيف</span><h3>سجل الجلسات الكامل</h3></div>
+            <button class="secondary-button" id="exportCsvBtn" type="button">تصدير CSV</button>
+          </div>
+
+          <div class="filters">
+            <select id="recordsStudentFilter"><option value="all">كل الطلاب</option></select>
+            <select id="recordsSubjectFilter">
+              <option value="all">كل المواد</option>
+              <option value="math">رياضيات</option>
+              <option value="physics">فيزياء</option>
+              <option value="chemistry">كيمياء</option>
+            </select>
+            <select id="recordsStatusFilter">
+              <option value="all">كل حالات الدفع</option>
+              <option value="paid">تم الدفع</option>
+              <option value="partial">دفعة جزئية</option>
+              <option value="unpaid">غير مدفوع</option>
+            </select>
+            <input id="recordsMonthFilter" type="month" title="فلترة حسب الشهر">
+            <button class="text-button" id="clearFiltersBtn" type="button">مسح الفلاتر</button>
+          </div>
+
+          <div id="recordsMobileList" class="records-mobile-list"></div>
+          <div class="table-wrap desktop-records-table">
+            <table>
+              <thead><tr><th>التاريخ</th><th>الطالب</th><th>المادة</th><th>الساعات</th><th>الإجمالي</th><th>المدفوع</th><th>المتبقي</th><th>الحالة</th><th></th></tr></thead>
+              <tbody id="recordsTableBody"></tbody>
+            </table>
+          </div>
+          <div id="recordsEmpty" class="empty-state hidden-field"><div>🗂️</div><h4>لا توجد جلسات مطابقة</h4><p>جرّب تغيير الفلاتر أو أضف جلسة جديدة.</p></div>
+        </section>
+      </section>
+    </main>
+  </div>
+
+  <button id="mobileFab" class="mobile-fab" type="button" aria-label="إضافة جلسة جديدة"><span>＋</span><b>جلسة</b></button>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"><span>✓</span><b id="toastText">تم الحفظ بنجاح</b></div>
+
+  <dialog id="studentDialog">
+    <form id="studentForm" class="dialog-card student-dialog-card" method="dialog" novalidate>
+      <div class="dialog-head">
+        <div><span class="section-kicker">بيانات الطالب</span><h3 id="studentDialogTitle">إضافة طالب جديد</h3></div>
+        <button id="closeStudentDialogBtn" class="icon-button" type="button">×</button>
+      </div>
+      <input id="studentIdField" type="hidden">
+      <div class="field">
+        <label for="studentNameField">اسم الطالب</label>
+        <input id="studentNameField" type="text" maxlength="80" placeholder="مثال: أحمد" autocomplete="name" required>
+      </div>
+      <div class="field">
+        <label for="studentAddressField">العنوان <span class="muted">(اختياري)</span></label>
+        <input id="studentAddressField" type="text" maxlength="160" placeholder="مثال: المزة - دمشق" autocomplete="street-address">
+      </div>
+      <div class="field-grid two">
+        <div class="field">
+          <label for="studentPricingType">طريقة التسعير</label>
+          <select id="studentPricingType">
+            <option value="hourly">بالساعة</option>
+            <option value="session">مبلغ ثابت للجلسة</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="studentRateField" id="studentRateLabel">سعر الساعة</label>
+          <div class="money-input"><input id="studentRateField" type="number" min="0" step="500" inputmode="numeric" placeholder="50000" required><span>ل.س</span></div>
+        </div>
+      </div>
+      <div class="student-form-note">سيُستخدم السعر الجديد للجلسات القادمة فقط، بينما تبقى الجلسات القديمة كما هي.</div>
+      <div class="dialog-actions student-dialog-actions">
+        <button id="archiveStudentBtn" class="secondary-button archive-button hidden-field" type="button">أرشفة الطالب</button>
+        <button id="deleteStudentBtn" class="danger-button hidden-field" type="button">حذف نهائي</button>
+        <button id="cancelStudentBtn" class="secondary-button" type="button">إلغاء</button>
+        <button id="saveStudentBtn" class="primary-button compact" type="submit"><span>حفظ الطالب</span><b>✓</b></button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="sessionDialog">
+    <div class="dialog-card">
+      <div class="dialog-head"><div><span class="section-kicker">تفاصيل الجلسة</span><h3 id="dialogTitle">الجلسة</h3></div><button id="closeDialogBtn" class="icon-button" type="button">×</button></div>
+      <div id="dialogContent"></div>
+      <div class="dialog-actions">
+        <button id="deleteSessionBtn" class="danger-button" type="button">حذف الجلسة</button>
+        <button id="closeDialogBtn2" class="secondary-button" type="button">إغلاق</button>
+      </div>
+    </div>
+  </dialog>
+
+  <script src="app.js"></script>
+</body>
+</html>
