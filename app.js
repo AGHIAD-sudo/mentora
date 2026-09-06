@@ -5,11 +5,12 @@
   const STUDENTS_KEY = "darsi_tutoring_students_v2";
   const BACKUP_VERSION = 2;
 
+  const DEFAULT_CREATED_AT = "2026-01-01T00:00:00.000Z";
   const DEFAULT_STUDENTS = [
-    { id: "badr", name: "بدر", address: "", rate: 50000, pricingType: "hourly", active: true },
-    { id: "malaz", name: "ملاذ", address: "", rate: 50000, pricingType: "hourly", active: true },
-    { id: "hassan", name: "حسن", address: "", rate: 35000, pricingType: "hourly", active: true },
-    { id: "elaf", name: "إيلاف", address: "", rate: 35000, pricingType: "hourly", active: true }
+    { id: "badr", name: "بدر", address: "", rate: 50000, pricingType: "hourly", active: true, createdAt: DEFAULT_CREATED_AT, updatedAt: DEFAULT_CREATED_AT },
+    { id: "malaz", name: "ملاذ", address: "", rate: 50000, pricingType: "hourly", active: true, createdAt: DEFAULT_CREATED_AT, updatedAt: DEFAULT_CREATED_AT },
+    { id: "hassan", name: "حسن", address: "", rate: 35000, pricingType: "hourly", active: true, createdAt: DEFAULT_CREATED_AT, updatedAt: DEFAULT_CREATED_AT },
+    { id: "elaf", name: "إيلاف", address: "", rate: 35000, pricingType: "hourly", active: true, createdAt: DEFAULT_CREATED_AT, updatedAt: DEFAULT_CREATED_AT }
   ];
 
   const SUBJECTS = Object.freeze({
@@ -27,7 +28,10 @@
     paymentStatus: "unpaid",
     activeDialogSessionId: null,
     activeStudentId: null,
-    deferredInstallPrompt: null
+    deferredInstallPrompt: null,
+    cloudUser: null,
+    cloudUnsubscribe: null,
+    cloudConnecting: false
   };
 
   const $ = (id) => document.getElementById(id);
@@ -65,7 +69,10 @@
 
     exportBtn: $("exportBtn"), importInput: $("importInput"), exportCsvBtn: $("exportCsvBtn"), installAppBtn: $("installAppBtn"), mobileFab: $("mobileFab"),
     toast: $("toast"), toastText: $("toastText"), sessionDialog: $("sessionDialog"),
-    dialogTitle: $("dialogTitle"), dialogContent: $("dialogContent"), deleteSessionBtn: $("deleteSessionBtn")
+    dialogTitle: $("dialogTitle"), dialogContent: $("dialogContent"), deleteSessionBtn: $("deleteSessionBtn"),
+    authGate: $("authGate"), authForm: $("authForm"), authEmail: $("authEmail"), authPassword: $("authPassword"),
+    authError: $("authError"), authLoginBtn: $("authLoginBtn"), logoutBtn: $("logoutBtn"),
+    cloudStatus: $("cloudStatus"), cloudStatusText: $("cloudStatusText")
   };
 
   function init() {
@@ -77,6 +84,186 @@
     renderAll();
     updateSessionPreview();
     renderTodayLabel();
+    initCloudSync();
+  }
+
+  function initCloudSync() {
+    const cloud = window.MentoraCloud;
+    if (!cloud?.available) {
+      document.body.classList.remove("auth-locked");
+      els.authGate?.classList.add("hidden-field");
+      setCloudStatus("local", "وضع محلي");
+      return;
+    }
+
+    const rememberedEmail = localStorage.getItem("mentora_auth_email") || "";
+    if (els.authEmail) els.authEmail.value = rememberedEmail;
+    setCloudStatus("syncing", "التحقق من الحساب");
+
+    cloud.onAuthStateChanged(async user => {
+      if (state.cloudUnsubscribe) {
+        state.cloudUnsubscribe();
+        state.cloudUnsubscribe = null;
+      }
+
+      if (!user) {
+        state.cloudUser = null;
+        state.cloudConnecting = false;
+        document.body.classList.add("auth-locked");
+        els.authGate?.classList.remove("hidden-field");
+        els.logoutBtn?.classList.add("hidden-field");
+        setCloudStatus("local", "بانتظار الدخول");
+        return;
+      }
+
+      state.cloudUser = user;
+      state.cloudConnecting = true;
+      document.body.classList.remove("auth-locked");
+      els.authGate?.classList.add("hidden-field");
+      els.logoutBtn?.classList.remove("hidden-field");
+      setCloudStatus("syncing", "جارٍ دمج البيانات");
+
+      try {
+        await cloud.mergeLocalData(user.uid, state.students, state.sessions);
+        state.cloudUnsubscribe = cloud.subscribe(user.uid, {
+          onStudents(items) {
+            const normalized = items.map(normalizeStudent).filter(Boolean);
+            state.students = normalized;
+            persistStudents();
+            renderAll();
+          },
+          onSessions(items) {
+            state.sessions = items.map(normalizeSession).filter(Boolean);
+            persistSessions();
+            renderAll();
+          },
+          onStatus(status) {
+            state.cloudConnecting = status === "syncing";
+            if (status === "synced") setCloudStatus("synced", "متزامن");
+            else if (status === "offline") setCloudStatus("syncing", "بدون إنترنت - محفوظ محلياً");
+            else setCloudStatus("syncing", "جارٍ المزامنة");
+          },
+          onError(error) {
+            console.error("Cloud listener error:", error);
+            setCloudStatus("error", "خطأ بالمزامنة");
+            showToast(cloudErrorMessage(error), "error");
+          }
+        });
+      } catch (error) {
+        console.error("Cloud startup error:", error);
+        state.cloudConnecting = false;
+        setCloudStatus("error", "تعذر الاتصال بالسحابة");
+        showToast(cloudErrorMessage(error), "error");
+      }
+    });
+  }
+
+  async function handleCloudLogin(event) {
+    event.preventDefault();
+    const cloud = window.MentoraCloud;
+    if (!cloud?.available) return;
+    const email = els.authEmail?.value.trim() || "";
+    const password = els.authPassword?.value || "";
+    if (!email || !password) return showAuthError("أدخل البريد الإلكتروني وكلمة المرور.");
+
+    showAuthError("");
+    setButtonLoading(els.authLoginBtn, true);
+    try {
+      await cloud.signIn(email, password);
+      localStorage.setItem("mentora_auth_email", email);
+      if (els.authPassword) els.authPassword.value = "";
+    } catch (error) {
+      console.error("Sign-in failed:", error);
+      showAuthError(authErrorMessage(error));
+    } finally {
+      setButtonLoading(els.authLoginBtn, false);
+    }
+  }
+
+  async function handleCloudLogout() {
+    const cloud = window.MentoraCloud;
+    if (!cloud?.available) return;
+    if (!window.confirm("تسجيل الخروج من Mentora على هذا الجهاز؟ البيانات السحابية لن تُحذف.")) return;
+    try {
+      await cloud.signOut();
+      showToast("تم تسجيل الخروج من هذا الجهاز");
+    } catch (error) {
+      showToast("تعذر تسجيل الخروج", "error");
+    }
+  }
+
+  function showAuthError(message) {
+    if (!els.authError) return;
+    els.authError.textContent = message || "";
+    els.authError.classList.toggle("hidden-field", !message);
+  }
+
+  function setCloudStatus(mode, text) {
+    if (!els.cloudStatus) return;
+    els.cloudStatus.classList.remove("local", "syncing", "synced", "error");
+    els.cloudStatus.classList.add(mode || "local");
+    if (els.cloudStatusText) els.cloudStatusText.textContent = text || "محلي";
+  }
+
+  function authErrorMessage(error) {
+    const code = String(error?.code || "");
+    if (code.includes("invalid-credential") || code.includes("wrong-password") || code.includes("user-not-found")) return "البريد الإلكتروني أو كلمة المرور غير صحيحة.";
+    if (code.includes("invalid-email")) return "صيغة البريد الإلكتروني غير صحيحة.";
+    if (code.includes("too-many-requests")) return "محاولات كثيرة. انتظر قليلاً ثم جرّب من جديد.";
+    if (code.includes("network-request-failed")) return "لا يوجد اتصال بالإنترنت حالياً.";
+    return "تعذر تسجيل الدخول. تأكد من الحساب وإعدادات Firebase.";
+  }
+
+  function cloudErrorMessage(error) {
+    const code = String(error?.code || "");
+    if (code.includes("permission-denied")) return "Firebase رفض الوصول. راجع قواعد Firestore وUID.";
+    if (code.includes("unauthenticated")) return "انتهت جلسة الدخول. سجّل الدخول من جديد.";
+    if (code.includes("network")) return "الاتصال ضعيف؛ سيتم الاحتفاظ بالتغييرات محلياً.";
+    return "حدثت مشكلة في المزامنة السحابية.";
+  }
+
+  function syncStudentToCloud(student) {
+    const cloud = window.MentoraCloud;
+    if (!cloud?.available || !state.cloudUser || !student) return;
+    setCloudStatus("syncing", "جارٍ المزامنة");
+    cloud.upsertStudent(state.cloudUser.uid, student).catch(error => {
+      console.error("Student sync failed:", error);
+      setCloudStatus("error", "خطأ بالمزامنة");
+      showToast(cloudErrorMessage(error), "error");
+    });
+  }
+
+  function syncSessionToCloud(session) {
+    const cloud = window.MentoraCloud;
+    if (!cloud?.available || !state.cloudUser || !session) return;
+    setCloudStatus("syncing", "جارٍ المزامنة");
+    cloud.upsertSession(state.cloudUser.uid, session).catch(error => {
+      console.error("Session sync failed:", error);
+      setCloudStatus("error", "خطأ بالمزامنة");
+      showToast(cloudErrorMessage(error), "error");
+    });
+  }
+
+  function deleteSessionFromCloud(sessionId) {
+    const cloud = window.MentoraCloud;
+    if (!cloud?.available || !state.cloudUser || !sessionId) return;
+    setCloudStatus("syncing", "جارٍ المزامنة");
+    cloud.deleteSession(state.cloudUser.uid, sessionId).catch(error => {
+      console.error("Session delete sync failed:", error);
+      setCloudStatus("error", "خطأ بالمزامنة");
+      showToast(cloudErrorMessage(error), "error");
+    });
+  }
+
+  function deleteStudentFromCloud(studentId) {
+    const cloud = window.MentoraCloud;
+    if (!cloud?.available || !state.cloudUser || !studentId) return;
+    setCloudStatus("syncing", "جارٍ المزامنة");
+    cloud.deleteStudent(state.cloudUser.uid, studentId).catch(error => {
+      console.error("Student delete sync failed:", error);
+      setCloudStatus("error", "خطأ بالمزامنة");
+      showToast(cloudErrorMessage(error), "error");
+    });
   }
 
   function loadSessions() {
@@ -94,7 +281,7 @@
   function loadStudents() {
     try {
       const raw = localStorage.getItem(STUDENTS_KEY);
-      if (!raw) return DEFAULT_STUDENTS.map(s => normalizeStudent({ ...s, createdAt: new Date().toISOString() }));
+      if (!raw) return DEFAULT_STUDENTS.map(s => normalizeStudent(s));
       const parsed = JSON.parse(raw);
       if (!Array.isArray(parsed) || !parsed.length) return DEFAULT_STUDENTS.map(s => normalizeStudent(s));
       return parsed.map(normalizeStudent).filter(Boolean);
@@ -113,8 +300,8 @@
       rate: Math.max(0, safeNumber(s.rate)),
       pricingType: s.pricingType === "session" ? "session" : "hourly",
       active: s.active !== false,
-      createdAt: s.createdAt || new Date().toISOString(),
-      updatedAt: s.updatedAt || s.createdAt || new Date().toISOString()
+      createdAt: s.createdAt || DEFAULT_CREATED_AT,
+      updatedAt: s.updatedAt || s.createdAt || DEFAULT_CREATED_AT
     };
   }
 
@@ -127,7 +314,8 @@
     return {
       id: String(s.id), studentId: String(s.studentId), subject: String(s.subject), date: String(s.date),
       hours: safeNumber(s.hours), pricingType, unitRate, hourlyRate: safeNumber(s.hourlyRate ?? unitRate), total, paid,
-      note: typeof s.note === "string" ? s.note : "", createdAt: s.createdAt || new Date().toISOString(),
+      note: typeof s.note === "string" ? s.note : "", createdAt: s.createdAt || DEFAULT_CREATED_AT,
+      updatedAt: s.updatedAt || s.createdAt || DEFAULT_CREATED_AT,
       payments: Array.isArray(s.payments) ? s.payments.map(p => ({ id: String(p.id || uid()), amount: safeNumber(p.amount), date: String(p.date || s.date) })) : []
     };
   }
@@ -165,6 +353,10 @@
     $$(".nav-item").forEach(btn => btn.addEventListener("click", () => switchView(btn.dataset.view)));
     $$('[data-jump]').forEach(btn => btn.addEventListener("click", () => switchView(btn.dataset.jump)));
     els.mobileFab?.addEventListener("click", () => switchView("entry"));
+    els.authForm?.addEventListener("submit", handleCloudLogin);
+    els.logoutBtn?.addEventListener("click", handleCloudLogout);
+    window.addEventListener("online", () => state.cloudUser && setCloudStatus("syncing", "استعادة الاتصال"));
+    window.addEventListener("offline", () => state.cloudUser && setCloudStatus("syncing", "بدون إنترنت - محفوظ محلياً"));
 
     els.dashboardPeriod.addEventListener("change", renderDashboard);
     els.studentSelect.addEventListener("change", () => { updateRateHint(); updateSessionPreview(); });
@@ -380,12 +572,13 @@
     const session = {
       id: uid(), studentId: student.id, subject, date, hours,
       pricingType: student.pricingType, unitRate: student.rate, hourlyRate: student.pricingType === "hourly" ? student.rate : 0,
-      total, paid, note: els.sessionNote.value.trim(), createdAt: new Date().toISOString(),
+      total, paid, note: els.sessionNote.value.trim(), createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
       payments: paid > 0 ? [{ id: uid(), amount: paid, date }] : []
     };
 
     state.sessions.push(session);
     persistSessions();
+    syncSessionToCloud(session);
     renderAll();
 
     window.setTimeout(() => {
@@ -562,7 +755,9 @@
     session.paid = Math.min(session.total, session.paid + amount);
     session.payments = Array.isArray(session.payments) ? session.payments : [];
     session.payments.push({ id: uid(), amount, date });
+    session.updatedAt = new Date().toISOString();
     persistSessions();
+    syncSessionToCloud(session);
     renderAll();
     els.debtSessionSelect.value = getRemaining(session) > 0 ? session.id : "";
     renderSelectedDebt();
@@ -661,6 +856,7 @@
     if (!window.confirm(`هل تريد حذف جلسة ${student?.name || "الطالب"} بتاريخ ${formatDate(s.date)}؟ لا يمكن التراجع عن هذا الإجراء.`)) return;
     state.sessions = state.sessions.filter(x => x.id !== id);
     persistSessions();
+    deleteSessionFromCloud(id);
     els.sessionDialog.close();
     state.activeDialogSessionId = null;
     renderAll();
@@ -716,6 +912,7 @@
     if (duplicate) return showToast("يوجد طالب حالي بنفس الاسم", "error");
 
     setButtonLoading(els.saveStudentBtn, true);
+    let savedStudent = null;
     if (id) {
       const student = getStudent(id);
       if (!student) return;
@@ -724,10 +921,13 @@
       student.rate = rate;
       student.pricingType = pricingType;
       student.updatedAt = new Date().toISOString();
+      savedStudent = student;
     } else {
-      state.students.push(normalizeStudent({ id: `stu-${uid()}`, name, address, rate, pricingType, active: true, createdAt: new Date().toISOString() }));
+      savedStudent = normalizeStudent({ id: `stu-${uid()}`, name, address, rate, pricingType, active: true, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+      state.students.push(savedStudent);
     }
     persistStudents();
+    syncStudentToCloud(savedStudent);
     populateStudentControls();
     renderAll();
     window.setTimeout(() => {
@@ -750,6 +950,7 @@
     }
     student.updatedAt = new Date().toISOString();
     persistStudents();
+    syncStudentToCloud(student);
     closeStudentDialog();
     renderAll();
   }
@@ -761,6 +962,7 @@
     if (!window.confirm(`حذف ${student.name} نهائياً؟`)) return;
     state.students = state.students.filter(s => s.id !== student.id);
     persistStudents();
+    deleteStudentFromCloud(student.id);
     closeStudentDialog();
     renderAll();
     showToast("تم حذف الطالب");
@@ -821,8 +1023,8 @@
   }
 
   function exportBackup() {
-    const payload = { app: "Darsi", version: BACKUP_VERSION, exportedAt: new Date().toISOString(), students: state.students, sessions: state.sessions };
-    downloadText(`darsi-backup-${toDateInputValue(new Date())}.json`, JSON.stringify(payload, null, 2), "application/json;charset=utf-8");
+    const payload = { app: "Mentora", version: BACKUP_VERSION, exportedAt: new Date().toISOString(), students: state.students, sessions: state.sessions };
+    downloadText(`mentora-backup-${toDateInputValue(new Date())}.json`, JSON.stringify(payload, null, 2), "application/json;charset=utf-8");
     showToast("تم تصدير نسخة احتياطية للطلاب والجلسات");
   }
 
@@ -843,7 +1045,11 @@
       ensureStudentsForLegacySessions();
       persistAll();
       renderAll();
-      showToast("تم استيراد النسخة الاحتياطية بنجاح");
+      if (window.MentoraCloud?.available && state.cloudUser) {
+        setCloudStatus("syncing", "رفع النسخة للسحابة");
+        await window.MentoraCloud.replaceAll(state.cloudUser.uid, state.students, state.sessions);
+      }
+      showToast("تم استيراد النسخة الاحتياطية ومزامنتها بنجاح");
     } catch (error) {
       console.error(error);
       showToast("ملف النسخة الاحتياطية غير صالح", "error");
@@ -857,7 +1063,7 @@
       return [s.date, st?.name || "", st?.address || "", sub?.name || "", s.hours, s.pricingType === "session" ? "للجلسة" : "بالساعة", s.unitRate || s.hourlyRate, s.total, s.paid, getRemaining(s), STATUS_LABELS[getStatus(s)], s.note || ""];
     });
     const csv = "\ufeff" + [headers, ...rows].map(row => row.map(csvEscape).join(",")).join("\n");
-    downloadText(`darsi-sessions-${toDateInputValue(new Date())}.csv`, csv, "text/csv;charset=utf-8");
+    downloadText(`mentora-sessions-${toDateInputValue(new Date())}.csv`, csv, "text/csv;charset=utf-8");
     showToast("تم تصدير سجل الجلسات CSV");
   }
 

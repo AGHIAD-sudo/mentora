@@ -6,9 +6,9 @@
   <meta name="theme-color" content="#5b4bdb" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-  <meta name="apple-mobile-web-app-title" content="درسّي" />
+  <meta name="apple-mobile-web-app-title" content="Mentora" />
   <meta name="description" content="لوحة تحكم عربية لإدارة جلسات الدروس الخصوصية والمدفوعات والديون." />
-  <title>درسّي | إدارة الجلسات والمدفوعات</title>
+  <title>Mentora | إدارة الجلسات والمدفوعات</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -16,13 +16,35 @@
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <link rel="stylesheet" href="styles.css" />
 </head>
-<body>
+<body class="auth-locked">
+  <div id="authGate" class="auth-gate">
+    <div class="auth-card">
+      <div class="auth-logo">م</div>
+      <span class="auth-kicker">Mentora Cloud</span>
+      <h2>تسجيل الدخول للمزامنة</h2>
+      <p>سجّل بنفس الحساب على الجهازين ليظهر أي تعديل فوراً على الجهاز الآخر.</p>
+      <form id="authForm" novalidate>
+        <div class="field">
+          <label for="authEmail">البريد الإلكتروني</label>
+          <input id="authEmail" type="email" autocomplete="username" placeholder="example@gmail.com" required>
+        </div>
+        <div class="field">
+          <label for="authPassword">كلمة المرور</label>
+          <input id="authPassword" type="password" autocomplete="current-password" placeholder="••••••••" required>
+        </div>
+        <div id="authError" class="auth-error hidden-field"></div>
+        <button id="authLoginBtn" class="primary-button" type="submit"><span>دخول ومزامنة</span><b>←</b></button>
+      </form>
+      <small class="auth-note">الحساب يُنشأ من Firebase Authentication. لا تشارك كلمة المرور مع أي شخص.</small>
+    </div>
+  </div>
+
   <div class="app-shell">
     <aside class="sidebar" aria-label="التنقل الرئيسي">
       <div class="brand">
         <div class="brand-mark">د</div>
         <div>
-          <strong>درسّي</strong>
+          <strong>Mentora</strong>
           <span>إدارة الدروس الخصوصية</span>
         </div>
       </div>
@@ -36,10 +58,10 @@
       </nav>
 
       <div class="sidebar-card">
-        <div class="mini-icon">✓</div>
+        <div class="mini-icon">☁</div>
         <div>
-          <strong>حفظ تلقائي</strong>
-          <p>تُحفظ بياناتك محلياً على هذا الجهاز فوراً.</p>
+          <strong>مزامنة سحابية</strong>
+          <p>تُحفظ البيانات محلياً وسحابياً وتظهر على الجهازين.</p>
         </div>
       </div>
     </aside>
@@ -51,6 +73,8 @@
           <h1 id="viewTitle">لوحة التحكم</h1>
         </div>
         <div class="top-actions">
+          <div id="cloudStatus" class="cloud-status local" title="حالة المزامنة"><span></span><b id="cloudStatusText">محلي</b></div>
+          <button class="icon-button hidden-field" id="logoutBtn" title="تسجيل الخروج" type="button">↪</button>
           <button class="icon-button install-button hidden-field" id="installAppBtn" title="تثبيت التطبيق على الهاتف" type="button">⌑</button>
           <button class="icon-button" id="exportBtn" title="تصدير نسخة احتياطية" type="button">⇩</button>
           <label class="icon-button file-button" title="استيراد نسخة احتياطية">⇧<input id="importInput" type="file" accept="application/json" hidden></label>
@@ -384,6 +408,10 @@
     </div>
   </dialog>
 
+  <script src="https://www.gstatic.com/firebasejs/12.18.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/12.18.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore-compat.js"></script>
+  <script src="firebase-cloud.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

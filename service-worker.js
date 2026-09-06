@@ -1,9 +1,10 @@
-const CACHE = "darsi-mobile-v2";
+const CACHE = "mentora-mobile-v3";
 const ASSETS = [
   "./",
   "./index.html",
   "./styles.css",
   "./app.js",
+  "./firebase-cloud.js",
   "./manifest.webmanifest",
   "./icons/icon-192.png",
   "./icons/icon-512.png",
