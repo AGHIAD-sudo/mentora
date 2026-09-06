@@ -100,7 +100,7 @@
     if (els.authEmail) els.authEmail.value = rememberedEmail;
     setCloudStatus("syncing", "التحقق من الحساب");
 
-    cloud.onAuthStateChanged(async user => {
+    cloud.onAuthStateChanged(user => {
       if (state.cloudUnsubscribe) {
         state.cloudUnsubscribe();
         state.cloudUnsubscribe = null;
@@ -116,45 +116,61 @@
         return;
       }
 
+      // احتفظ بنسخة من البيانات المحلية قبل أن يصل أول Snapshot من Firestore.
+      // هذا يمنع ضياع بيانات الجهاز القديم أثناء أول ترحيل للسحابة.
+      const localStudents = state.students.map(item => ({ ...item }));
+      const localSessions = state.sessions.map(item => ({ ...item, payments: Array.isArray(item.payments) ? item.payments.map(p => ({ ...p })) : [] }));
+
       state.cloudUser = user;
       state.cloudConnecting = true;
       document.body.classList.remove("auth-locked");
       els.authGate?.classList.add("hidden-field");
       els.logoutBtn?.classList.remove("hidden-field");
-      setCloudStatus("syncing", "جارٍ دمج البيانات");
+      setCloudStatus("syncing", "اتصال مباشر بالسحابة");
 
-      try {
-        await cloud.mergeLocalData(user.uid, state.students, state.sessions);
-        state.cloudUnsubscribe = cloud.subscribe(user.uid, {
-          onStudents(items) {
-            const normalized = items.map(normalizeStudent).filter(Boolean);
+      // مهم: افتح الاستماع اللحظي فوراً. لا ننتظر عملية دمج البيانات القديمة.
+      // بهذه الطريقة أي جلسة من الجهاز الآخر تظهر مباشرة حتى لو استغرق الترحيل وقتاً.
+      state.cloudUnsubscribe = cloud.subscribe(user.uid, {
+        onStudents(items) {
+          const normalized = items.map(normalizeStudent).filter(Boolean);
+          if (normalized.length || !localStudents.length) {
             state.students = normalized;
             persistStudents();
             renderAll();
-          },
-          onSessions(items) {
-            state.sessions = items.map(normalizeSession).filter(Boolean);
+          }
+        },
+        onSessions(items) {
+          const normalized = items.map(normalizeSession).filter(Boolean);
+          if (normalized.length || !localSessions.length) {
+            state.sessions = normalized;
             persistSessions();
             renderAll();
-          },
-          onStatus(status) {
-            state.cloudConnecting = status === "syncing";
-            if (status === "synced") setCloudStatus("synced", "متزامن");
-            else if (status === "offline") setCloudStatus("syncing", "بدون إنترنت - محفوظ محلياً");
-            else setCloudStatus("syncing", "جارٍ المزامنة");
-          },
-          onError(error) {
-            console.error("Cloud listener error:", error);
-            setCloudStatus("error", "خطأ بالمزامنة");
-            showToast(cloudErrorMessage(error), "error");
           }
+        },
+        onStatus(status) {
+          state.cloudConnecting = status === "syncing";
+          if (status === "synced") setCloudStatus("synced", "متزامن لحظياً");
+          else if (status === "offline") setCloudStatus("syncing", "بدون إنترنت - محفوظ محلياً");
+          else setCloudStatus("syncing", "جارٍ المزامنة");
+        },
+        onError(error) {
+          console.error("Cloud listener error:", error);
+          setCloudStatus("error", "خطأ بالمزامنة");
+          showToast(cloudErrorMessage(error), "error");
+        }
+      });
+
+      // ارفع بيانات النسخة القديمة في الخلفية بدون تعطيل الاستماع اللحظي.
+      cloud.mergeLocalData(user.uid, localStudents, localSessions)
+        .then(() => {
+          if (state.cloudUser?.uid === user.uid) setCloudStatus("synced", "متزامن لحظياً");
+        })
+        .catch(error => {
+          console.error("Cloud background merge error:", error);
+          // لا نوقف الاستماع اللحظي إن فشل ترحيل قديم؛ فقط نظهر الخطأ للمستخدم.
+          setCloudStatus("error", "تعذر رفع بعض البيانات القديمة");
+          showToast(cloudErrorMessage(error), "error");
         });
-      } catch (error) {
-        console.error("Cloud startup error:", error);
-        state.cloudConnecting = false;
-        setCloudStatus("error", "تعذر الاتصال بالسحابة");
-        showToast(cloudErrorMessage(error), "error");
-      }
     });
   }
 
@@ -226,44 +242,52 @@
     const cloud = window.MentoraCloud;
     if (!cloud?.available || !state.cloudUser || !student) return;
     setCloudStatus("syncing", "جارٍ المزامنة");
-    cloud.upsertStudent(state.cloudUser.uid, student).catch(error => {
-      console.error("Student sync failed:", error);
-      setCloudStatus("error", "خطأ بالمزامنة");
-      showToast(cloudErrorMessage(error), "error");
-    });
+    cloud.upsertStudent(state.cloudUser.uid, student)
+      .then(() => setCloudStatus("synced", "متزامن لحظياً"))
+      .catch(error => {
+        console.error("Student sync failed:", error);
+        setCloudStatus("error", "خطأ بالمزامنة");
+        showToast(cloudErrorMessage(error), "error");
+      });
   }
 
   function syncSessionToCloud(session) {
     const cloud = window.MentoraCloud;
     if (!cloud?.available || !state.cloudUser || !session) return;
     setCloudStatus("syncing", "جارٍ المزامنة");
-    cloud.upsertSession(state.cloudUser.uid, session).catch(error => {
-      console.error("Session sync failed:", error);
-      setCloudStatus("error", "خطأ بالمزامنة");
-      showToast(cloudErrorMessage(error), "error");
-    });
+    cloud.upsertSession(state.cloudUser.uid, session)
+      .then(() => setCloudStatus("synced", "متزامن لحظياً"))
+      .catch(error => {
+        console.error("Session sync failed:", error);
+        setCloudStatus("error", "خطأ بالمزامنة");
+        showToast(cloudErrorMessage(error), "error");
+      });
   }
 
   function deleteSessionFromCloud(sessionId) {
     const cloud = window.MentoraCloud;
     if (!cloud?.available || !state.cloudUser || !sessionId) return;
     setCloudStatus("syncing", "جارٍ المزامنة");
-    cloud.deleteSession(state.cloudUser.uid, sessionId).catch(error => {
-      console.error("Session delete sync failed:", error);
-      setCloudStatus("error", "خطأ بالمزامنة");
-      showToast(cloudErrorMessage(error), "error");
-    });
+    cloud.deleteSession(state.cloudUser.uid, sessionId)
+      .then(() => setCloudStatus("synced", "متزامن لحظياً"))
+      .catch(error => {
+        console.error("Session delete sync failed:", error);
+        setCloudStatus("error", "خطأ بالمزامنة");
+        showToast(cloudErrorMessage(error), "error");
+      });
   }
 
   function deleteStudentFromCloud(studentId) {
     const cloud = window.MentoraCloud;
     if (!cloud?.available || !state.cloudUser || !studentId) return;
     setCloudStatus("syncing", "جارٍ المزامنة");
-    cloud.deleteStudent(state.cloudUser.uid, studentId).catch(error => {
-      console.error("Student delete sync failed:", error);
-      setCloudStatus("error", "خطأ بالمزامنة");
-      showToast(cloudErrorMessage(error), "error");
-    });
+    cloud.deleteStudent(state.cloudUser.uid, studentId)
+      .then(() => setCloudStatus("synced", "متزامن لحظياً"))
+      .catch(error => {
+        console.error("Student delete sync failed:", error);
+        setCloudStatus("error", "خطأ بالمزامنة");
+        showToast(cloudErrorMessage(error), "error");
+      });
   }
 
   function loadSessions() {
@@ -1070,7 +1094,9 @@
   function registerPwa() {
     if (!("serviceWorker" in navigator)) return;
     if (!/^https?:$/.test(location.protocol)) return;
-    navigator.serviceWorker.register("./service-worker.js").catch(error => console.warn("Service worker registration failed:", error));
+    navigator.serviceWorker.register("./service-worker.js", { updateViaCache: "none" })
+      .then(registration => registration.update().catch(() => {}))
+      .catch(error => console.warn("Service worker registration failed:", error));
   }
 
   async function installPwa() {

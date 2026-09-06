@@ -64,11 +64,9 @@
   async function mergeCollection(uid, name, localItems) {
     const ref = collectionRef(uid, name);
     let snapshot;
-    try {
-      snapshot = await ref.get({ source: "server" });
-    } catch (_) {
-      snapshot = await ref.get();
-    }
+    // لا نجبر قراءة server-only لأنها قد تعلق طويلاً على بعض متصفحات Android.
+    // القراءة العادية تستفيد من الكاش وتتحقق من الخادم عند توفر الاتصال.
+    snapshot = await ref.get();
 
     const remote = new Map(snapshot.docs.map(doc => [doc.id, doc.data()]));
     const operations = [];
